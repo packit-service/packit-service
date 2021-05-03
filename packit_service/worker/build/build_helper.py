@@ -329,7 +329,7 @@ class BaseBuildJobHelper:
         packit_logger = logging.getLogger("packit")
         packit_logger.setLevel(logging.DEBUG)
         packit_logger.addHandler(handler)
-        formatter = PackitFormatter(None, "%H:%M:%S")
+        formatter = PackitFormatter()
         handler.setFormatter(formatter)
 
         srpm_success = True
