@@ -6,7 +6,7 @@ from celery.app.task import Task
 from copr.v3 import CoprRequestException
 from flexmock import flexmock
 from packit_service.worker.tasks import run_copr_build_handler
-from packit_service.worker.handlers.github_handlers import CoprBuildHandler
+from packit_service.worker.handlers import CoprBuildHandler
 
 
 def test_autoretry():

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 
 from flexmock import flexmock
-
 from ogr.services.github import GithubProject
+
 from packit_service.constants import KojiBuildState
 from packit_service.models import (
     ProjectReleaseModel,
@@ -21,9 +21,8 @@ from packit_service.service.events import (
     KojiBuildEvent,
     MergeRequestCommentGitlabEvent,
     PushGitlabEvent,
-    PullRequestLabelPagureEvent,
 )
-from packit_service.worker.parser import Parser, CentosEventParser
+from packit_service.worker.parser import Parser
 from packit_service.worker.testing_farm import TestingFarmJobHelper
 from tests_requre.conftest import SampleValues
 
@@ -240,49 +239,6 @@ def test_pr_comment_event_non_existing_pr(
         flexmock(head_commit="12345")
     )
     assert event_object.commit_sha == "12345"
-
-    assert isinstance(event_object.db_trigger, PullRequestModel)
-    assert event_object.db_trigger.pr_id == 342
-
-    assert isinstance(event_object.db_trigger.project, GitProjectModel)
-    assert event_object.db_trigger.project.namespace == "the-namespace"
-    assert event_object.db_trigger.project.repo_name == "the-repo-name"
-
-
-def test_pagure_pr_tag_added_event_existing_pr(
-    clean_before_and_after, pagure_pr_model, pagure_pr_tag_added
-):
-    event_object = CentosEventParser().parse_event(pagure_pr_tag_added)
-    assert isinstance(event_object, PullRequestLabelPagureEvent)
-
-    assert event_object.identifier == "342"
-    assert event_object.git_ref is None
-    assert event_object.pr_id == 342
-    assert (
-        event_object.project_url
-        == "https://git.stg.centos.org/the-namespace/the-repo-name"
-    )
-    assert event_object.commit_sha == "0ec7f861383821218c485a45810d384ca224e357"
-
-    assert isinstance(event_object.db_trigger, PullRequestModel)
-    assert event_object.db_trigger == pagure_pr_model
-    assert event_object.db_trigger.pr_id == 342
-
-    assert isinstance(event_object.db_trigger.project, GitProjectModel)
-    assert event_object.db_trigger.project.namespace == "the-namespace"
-    assert event_object.db_trigger.project.repo_name == "the-repo-name"
-
-
-def test_pagure_pr_tag_added_event_non_existing_pr(
-    clean_before_and_after, pagure_pr_tag_added
-):
-    event_object = CentosEventParser().parse_event(pagure_pr_tag_added)
-    assert isinstance(event_object, PullRequestLabelPagureEvent)
-
-    assert event_object.identifier == "342"
-    assert event_object.git_ref is None
-    assert event_object.pr_id == 342
-    assert event_object.commit_sha == "0ec7f861383821218c485a45810d384ca224e357"
 
     assert isinstance(event_object.db_trigger, PullRequestModel)
     assert event_object.db_trigger.pr_id == 342

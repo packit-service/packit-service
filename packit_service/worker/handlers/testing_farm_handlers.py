@@ -12,20 +12,100 @@ from ogr.abstract import CommitStatus
 from packit.config import JobConfig, JobType
 from packit.config.package_config import PackageConfig
 
-from packit_service.models import AbstractTriggerDbType, TFTTestRunModel
+from packit_service.models import AbstractTriggerDbType, TFTTestRunModel, CoprBuildModel
 from packit_service.service.events import (
     TestResult,
     TestingFarmResult,
     TestingFarmResultsEvent,
+    PullRequestCommentGithubEvent,
+    MergeRequestCommentGitlabEvent,
+    PullRequestCommentPagureEvent,
 )
 from packit_service.service.urls import get_testing_farm_info_url
 from packit_service.worker.handlers import JobHandler
-from packit_service.worker.handlers.abstract import TaskName, configured_as, reacts_to
+from packit_service.worker.handlers.abstract import (
+    TaskName,
+    configured_as,
+    reacts_to,
+    run_for_comment,
+)
 from packit_service.worker.reporting import StatusReporter
 from packit_service.worker.result import TaskResults
 from packit_service.worker.testing_farm import TestingFarmJobHelper
 
 logger = logging.getLogger(__name__)
+
+
+@run_for_comment(command="test")
+@reacts_to(PullRequestCommentGithubEvent)
+@reacts_to(MergeRequestCommentGitlabEvent)
+@reacts_to(PullRequestCommentPagureEvent)
+@configured_as(job_type=JobType.tests)
+class TestingFarmHandler(JobHandler):
+    """
+    The automatic matching is now used only for /packit test
+    TODO: We can react directly to the finished Copr build.
+    """
+
+    task_name = TaskName.testing_farm
+
+    def __init__(
+        self,
+        package_config: PackageConfig,
+        job_config: JobConfig,
+        event: dict,
+        chroot: Optional[str] = None,
+        build_id: Optional[int] = None,
+    ):
+        super().__init__(
+            package_config=package_config,
+            job_config=job_config,
+            event=event,
+        )
+        self.chroot = chroot
+        self.build_id = build_id
+        self._db_trigger: Optional[AbstractTriggerDbType] = None
+
+    @property
+    def db_trigger(self) -> Optional[AbstractTriggerDbType]:
+        if not self._db_trigger:
+            # copr build end
+            if self.build_id:
+                build = CoprBuildModel.get_by_id(self.build_id)
+                self._db_trigger = build.get_trigger_object()
+            # '/packit test' comment
+            else:
+                self._db_trigger = self.data.db_trigger
+        return self._db_trigger
+
+    def run(self) -> TaskResults:
+        # TODO: once we turn handlers into respective celery tasks, we should iterate
+        #       here over *all* matching jobs and do them all, not just the first one
+        testing_farm_helper = TestingFarmJobHelper(
+            service_config=self.service_config,
+            package_config=self.package_config,
+            project=self.project,
+            metadata=self.data,
+            db_trigger=self.db_trigger,
+            job_config=self.job_config,
+        )
+
+        if self.data.event_type in (
+            PullRequestCommentGithubEvent.__name__,
+            MergeRequestCommentGitlabEvent.__name__,
+            PullRequestCommentPagureEvent.__name__,
+        ):
+            logger.debug(f"Test job config: {testing_farm_helper.job_tests}")
+            return testing_farm_helper.run_testing_farm_on_all()
+
+        if self.build_id:
+            copr_build = CoprBuildModel.get_by_id(self.build_id)
+        else:
+            copr_build = testing_farm_helper.get_latest_copr_build(target=self.chroot)
+        logger.info(f"Running testing farm for {copr_build}:{self.chroot}.")
+        return testing_farm_helper.run_testing_farm(
+            build=copr_build, chroot=self.chroot
+        )
 
 
 @configured_as(job_type=JobType.tests)

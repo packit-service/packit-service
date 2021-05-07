@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Union
 from ogr.abstract import GitProject
 from ogr.services.pagure import PagureProject
 from packit.config import PackageConfig, get_package_config_from_repo
+
 from packit_service.config import PackageConfigGetter, ServiceConfig
 from packit_service.constants import KojiBuildState
 from packit_service.models import (
@@ -504,10 +505,12 @@ class MergeRequestGitlabEvent(AddPullRequestDbTrigger, AbstractGitlabEvent):
         username: str,
         object_id: int,
         object_iid: int,
-        source_repo_name: str,
         source_repo_namespace: str,
+        source_repo_name: str,
+        source_repo_branch: str,
         target_repo_namespace: str,
         target_repo_name: str,
+        target_repo_branch: str,
         project_url: str,
         commit_sha: str,
     ):
@@ -519,10 +522,12 @@ class MergeRequestGitlabEvent(AddPullRequestDbTrigger, AbstractGitlabEvent):
         self.user_login = username
         self.object_id = object_id
         self.identifier = str(object_iid)
-        self.source_repo_name = source_repo_name
         self.source_repo_namespace = source_repo_namespace
+        self.source_repo_name = source_repo_name
+        self.source_repo_branch = source_repo_branch
         self.target_repo_namespace = target_repo_namespace
         self.target_repo_name = target_repo_name
+        self.target_repo_branch = target_repo_branch
         self.project_url = project_url
         self.commit_sha = commit_sha
 
@@ -1307,46 +1312,6 @@ class PullRequestPagureEvent(AddPullRequestDbTrigger, AbstractPagureEvent):
         self.identifier = str(pr_id)
         self.git_ref = None  # pr_id will be used for checkout
         self.project_url = project_url
-
-    def get_dict(self, default_dict: Optional[Dict] = None) -> dict:
-        result = super().get_dict()
-        result["action"] = result["action"].value
-        return result
-
-    def get_base_project(self) -> GitProject:
-        fork = self.project.service.get_project(
-            namespace=self.base_repo_namespace,
-            repo=self.base_repo_name,
-            username=self.base_repo_owner,
-            is_fork=True,
-        )
-        logger.debug(f"Base project: {fork} owned by {self.base_repo_owner}")
-        return fork
-
-
-class PullRequestLabelPagureEvent(AddPullRequestDbTrigger, AbstractPagureEvent):
-    def __init__(
-        self,
-        action: PullRequestLabelAction,
-        pr_id: int,
-        base_repo_namespace: str,
-        base_repo_name: str,
-        base_repo_owner: str,
-        base_ref: Optional[str],
-        commit_sha: str,
-        project_url: str,
-        labels: List[str],
-    ):
-        super().__init__(project_url=project_url, pr_id=pr_id)
-        self.action = action
-        self.base_repo_namespace = base_repo_namespace
-        self.base_repo_name = base_repo_name
-        self.base_repo_owner = base_repo_owner
-        self.base_ref = base_ref
-        self.identifier = str(pr_id)
-        self.git_ref = None  # pr_id will be used for checkout
-        self.commit_sha = commit_sha
-        self.labels = labels
 
     def get_dict(self, default_dict: Optional[Dict] = None) -> dict:
         result = super().get_dict()

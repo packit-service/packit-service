@@ -19,7 +19,6 @@ from packit_service.config import ServiceConfig, PackageConfigGetter, ProjectToS
 from packit_service.constants import KojiBuildState
 from packit_service.models import (
     CoprBuildModel,
-    PullRequestModel,
     KojiBuildModel,
     TestingFarmResult,
     TFTTestRunModel,
@@ -42,7 +41,6 @@ from packit_service.service.events import (
     PushGitHubEvent,
     PullRequestPagureEvent,
     PullRequestCommentPagureEvent,
-    PullRequestLabelPagureEvent,
     MergeRequestGitlabEvent,
     GitlabEventAction,
     KojiBuildEvent,
@@ -226,16 +224,17 @@ class TestEvents:
         assert event_object.identifier == "1"
         assert event_object.source_repo_namespace == "testing/packit"
         assert event_object.source_repo_name == "hello-there"
+        assert event_object.source_repo_branch == "test"
         assert event_object.commit_sha == "1f6a716aa7a618a9ffe56970d77177d99d100022"
         assert event_object.target_repo_namespace == "testing/packit"
         assert event_object.target_repo_name == "hello-there"
+        assert event_object.target_repo_branch == "master"
         assert (
             event_object.project_url == "https://gitlab.com/testing/packit/hello-there"
         )
 
         assert isinstance(event_object.project, GitlabProject)
         assert event_object.project.full_repo_name == "testing/packit/hello-there"
-
         assert event_object.base_project.full_repo_name == "testing/packit/hello-there"
 
         flexmock(PackageConfigGetter).should_receive(
@@ -261,7 +260,6 @@ class TestEvents:
 
         assert isinstance(event_object.project, GitlabProject)
         assert event_object.project.full_repo_name == "testing/packit/hello-there"
-
         assert event_object.base_project.full_repo_name == "testing/packit/hello-there"
 
         flexmock(PackageConfigGetter).should_receive(
@@ -1113,52 +1111,6 @@ class TestCentOSEventParser:
             "https://git.stg.centos.org/source-git/packit-hello-world"
         )
         assert event_object.package_config
-
-    def test_pull_request_tag_event(self, pagure_pr_tag_added):
-        centos_event_parser = CentosEventParser()
-        event_object = centos_event_parser.parse_event(pagure_pr_tag_added)
-
-        assert isinstance(event_object, PullRequestLabelPagureEvent)
-        assert event_object.pr_id == 18
-        assert event_object.base_repo_namespace == "source-git"
-        assert event_object.base_repo_name == "packit-hello-world"
-        assert event_object.base_repo_owner == "packit"
-        assert event_object.base_ref == "master"
-        assert event_object.labels == ["accepted"]
-        assert (
-            event_object.project_url
-            == "https://git.stg.centos.org/source-git/packit-hello-world"
-        )
-
-        assert isinstance(event_object.project, PagureProject)
-        assert event_object.project.full_repo_name == "source-git/packit-hello-world"
-        assert isinstance(event_object.base_project, PagureProject)
-        assert (
-            event_object.base_project.full_repo_name
-            == "fork/packit/source-git/packit-hello-world"
-        )
-
-        flexmock(PackageConfigGetter).should_receive(
-            "get_package_config_from_repo"
-        ).with_args(
-            base_project=event_object.base_project,
-            project=event_object.project,
-            pr_id=18,
-            reference="0ec7f861383821218c485a45810d384ca224e357",
-            fail_when_missing=False,
-            spec_file_path="SPECS/packit-hello-world.spec",
-        ).and_return(
-            flexmock()
-        ).once()
-        flexmock(PagureProject).should_receive("get_web_url").and_return(
-            "https://git.stg.centos.org/source-git/packit-hello-world"
-        )
-        assert event_object.package_config
-        # Check that get_dict() returns a JSON serializable object.
-        flexmock(PullRequestModel).should_receive("get_or_create").and_return(
-            flexmock(id=111)
-        )
-        json.dumps(event_object.get_dict())
 
     def test_parse_copr_build_event_start(
         self, copr_build_results_start, copr_build_centos_pr

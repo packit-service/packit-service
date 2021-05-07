@@ -9,11 +9,11 @@ from typing import Any
 from typing import List, Set, Type, Union
 
 from celery import group
-
 from ogr.abstract import CommitStatus
 from packit.config import JobConfig, PackageConfig
-from packit_service.constants import TASK_ACCEPTED
+
 from packit_service.config import ServiceConfig
+from packit_service.constants import TASK_ACCEPTED
 from packit_service.log_versions import log_job_versions
 from packit_service.service.events import (
     Event,
@@ -24,10 +24,12 @@ from packit_service.service.events import (
     MergeRequestCommentGitlabEvent,
     PullRequestCommentGithubEvent,
     PullRequestCommentPagureEvent,
-    PullRequestLabelPagureEvent,
+    MergeRequestGitlabEvent,
 )
+from packit_service.worker.allowlist import Allowlist
 from packit_service.worker.build import CoprBuildJobHelper, KojiBuildJobHelper
 from packit_service.worker.handlers import (
+    BugzillaHandler,
     CoprBuildHandler,
     CoprBuildEndHandler,
     CoprBuildStartHandler,
@@ -42,10 +44,8 @@ from packit_service.worker.handlers.abstract import (
     MAP_REQUIRED_JOB_TYPE_TO_HANDLER,
     SUPPORTED_EVENTS_FOR_HANDLER,
 )
-from packit_service.worker.handlers.pagure_handlers import PagurePullRequestLabelHandler
 from packit_service.worker.parser import CentosEventParser, Parser
 from packit_service.worker.result import TaskResults
-from packit_service.worker.allowlist import Allowlist
 
 REQUESTED_PULL_REQUEST_COMMENT = "/packit"
 
@@ -373,21 +373,22 @@ class SteveJobs:
             TestingFarmResultsHandler,
             CoprBuildStartHandler,
             CoprBuildEndHandler,
-            PagurePullRequestLabelHandler,
         ]
         processing_results = None
+
+        # Bugzilla handler is run even the job is not configured in a package.
+        # This's not in the condition below because we want to run process_jobs() as well.
+        if isinstance(event_object, MergeRequestGitlabEvent):
+            BugzillaHandler.get_signature(
+                event=event_object,
+                job=None,
+            ).apply_async()
 
         # installation is handled differently b/c app is installed to GitHub account
         # not repository, so package config with jobs is missing
         if isinstance(event_object, InstallationEvent):
             GithubAppInstallationHandler.get_signature(
                 event=event_object, job=None
-            ).apply_async()
-        # Label/Tag added event handler is run even when the job is not configured in package
-        elif isinstance(event_object, PullRequestLabelPagureEvent):
-            PagurePullRequestLabelHandler.get_signature(
-                event=event_object,
-                job=None,
             ).apply_async()
         else:
             # Processing the jobs from the config.

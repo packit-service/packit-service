@@ -6,7 +6,7 @@ Parser is transforming github JSONs into `events` objects
 """
 import logging
 from functools import partial
-from typing import Dict, Optional, Type, Union, List
+from typing import Optional, Type, Union, List
 
 import xmltodict
 from ogr.parsing import parse_git_repo
@@ -37,8 +37,6 @@ from packit_service.service.events import (
     PullRequestCommentGithubEvent,
     PullRequestCommentPagureEvent,
     PullRequestGithubEvent,
-    PullRequestLabelAction,
-    PullRequestLabelPagureEvent,
     PullRequestPagureEvent,
     PushGitHubEvent,
     PushGitlabEvent,
@@ -57,8 +55,8 @@ logger = logging.getLogger(__name__)
 
 class Parser:
     """
-    Once we receive a new event (GitHub webhook or Fedmsg event) for every event we need
-    to have method inside the `Parser` class to create objects defined in `events.py`.
+    Once we receive a new event (GitHub/GitLab webhook or Fedmsg/Centosmsg event) for every event
+    we need to have method inside the `Parser` class to create objects defined in `events.py`.
     """
 
     @staticmethod
@@ -84,7 +82,7 @@ class Parser:
     ]:
         """
         Try to parse all JSONs that we process
-        :param event: JSON from Github or fedmsg
+        :param event: JSON from GitHub/GitLab or fedmsg/centosmsg
         :return: event object
         """
 
@@ -150,11 +148,13 @@ class Parser:
             logger.warning("Source project url not found in the event.")
             return None
         parsed_source_url = parse_git_repo(potential_url=source_project_url)
+        source_repo_branch = nested_get(event, "object_attributes", "source_branch")
         logger.info(
             f"Source: "
-            f"repo={parsed_source_url.repo} "
+            f"url={source_project_url} "
             f"namespace={parsed_source_url.namespace} "
-            f"url={source_project_url}."
+            f"repo={parsed_source_url.repo} "
+            f"branch={source_repo_branch}."
         )
 
         target_project_url = nested_get(event, "project", "web_url")
@@ -162,11 +162,13 @@ class Parser:
             logger.warning("Target project url not found in the event.")
             return None
         parsed_target_url = parse_git_repo(potential_url=target_project_url)
+        target_repo_branch = nested_get(event, "object_attributes", "target_branch")
         logger.info(
             f"Target: "
-            f"repo={parsed_target_url.repo} "
+            f"url={target_project_url} "
             f"namespace={parsed_target_url.namespace} "
-            f"url={target_project_url}."
+            f"repo={parsed_target_url.repo} "
+            f"branch={target_repo_branch}."
         )
 
         commit_sha = nested_get(event, "object_attributes", "last_commit", "id")
@@ -178,8 +180,10 @@ class Parser:
             object_iid=object_iid,
             source_repo_namespace=parsed_source_url.namespace,
             source_repo_name=parsed_source_url.repo,
+            source_repo_branch=source_repo_branch,
             target_repo_namespace=parsed_target_url.namespace,
             target_repo_name=parsed_target_url.repo,
+            target_repo_branch=target_repo_branch,
             project_url=target_project_url,
             commit_sha=commit_sha,
         )
@@ -928,7 +932,6 @@ class CentosEventParser:
             "pull-request.comment.edited": partial(
                 self._pull_request_comment, action="edited"
             ),
-            "pull-request.tag.added": partial(self._pull_request_label, action="added"),
             "git.receive": self._push_event,
         }
 
@@ -1019,24 +1022,6 @@ class CentosEventParser:
             commit_sha=commit_sha,
             user_login=pagure_login,
             comment=comment,
-        )
-
-    @staticmethod
-    def _pull_request_label(event: dict, action: str) -> PullRequestLabelPagureEvent:
-        # Yes, API really uses "pull_request" in this case and "pullrequest" in others.
-        # Fallback to "pullrequest" in case it gets 'synchronized' in future.
-        pr: Dict = event.get("pull_request") or event["pullrequest"]
-
-        return PullRequestLabelPagureEvent(
-            action=PullRequestLabelAction[action],
-            pr_id=pr["id"],
-            base_repo_namespace=pr["project"]["namespace"],
-            base_repo_name=pr["project"]["name"],
-            base_repo_owner=pr["project"]["user"]["name"],
-            base_ref=pr["branch"],
-            commit_sha=pr["commit_stop"],
-            project_url=f"https://{event['source']}/{pr['project']['url_path']}",
-            labels=event["tags"],
         )
 
     @staticmethod

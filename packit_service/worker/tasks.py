@@ -11,23 +11,17 @@ from packit_service.constants import DEFAULT_RETRY_LIMIT, DEFAULT_RETRY_BACKOFF
 from packit_service.utils import load_job_config, load_package_config
 from packit_service.worker.build.babysit import check_copr_build
 from packit_service.worker.handlers.abstract import TaskName
-from packit_service.worker.handlers.fedmsg_handlers import (
+from packit_service.worker.handlers import (
+    BugzillaHandler,
     CoprBuildEndHandler,
     CoprBuildStartHandler,
     KojiBuildReportHandler,
     DistGitCommitHandler,
-)
-from packit_service.worker.handlers.github_handlers import (
     CoprBuildHandler,
     GithubAppInstallationHandler,
     KojiBuildHandler,
     ProposeDownstreamHandler,
     TestingFarmHandler,
-)
-from packit_service.worker.handlers.pagure_handlers import (
-    PagurePullRequestLabelHandler,
-)
-from packit_service.worker.handlers.testing_farm_handlers import (
     TestingFarmResultsHandler,
 )
 from packit_service.worker.jobs import SteveJobs
@@ -190,9 +184,9 @@ def run_distgit_commit_handler(event: dict, package_config: dict, job_config: di
     return get_handlers_task_results(handler.run_job(), event)
 
 
-@celery_app.task(name=TaskName.pagure_pr_label, base=HandlerTaskWithRetry)
-def run_pagure_pr_label_handler(event: dict, package_config: dict, job_config: dict):
-    handler = PagurePullRequestLabelHandler(
+@celery_app.task(name=TaskName.bugzilla, base=HandlerTaskWithRetry)
+def run_bugzilla_handler(event: dict, package_config: dict, job_config: dict):
+    handler = BugzillaHandler(
         package_config=load_package_config(package_config),
         job_config=load_job_config(job_config),
         event=event,

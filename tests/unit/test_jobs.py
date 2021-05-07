@@ -27,14 +27,12 @@ from packit_service.worker.handlers import (
     CoprBuildEndHandler,
     CoprBuildStartHandler,
     JobHandler,
+    TestingFarmHandler,
     TestingFarmResultsHandler,
-)
-from packit_service.worker.handlers.fedmsg_handlers import KojiBuildReportHandler
-from packit_service.worker.handlers.github_handlers import (
     CoprBuildHandler,
     KojiBuildHandler,
+    KojiBuildReportHandler,
     ProposeDownstreamHandler,
-    TestingFarmHandler,
 )
 from packit_service.worker.jobs import (
     get_config_for_handler_kls,

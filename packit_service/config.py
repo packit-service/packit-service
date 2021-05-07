@@ -68,8 +68,6 @@ class ProjectToSync(NamedTuple):
 
 
 class ServiceConfig(Config):
-    service_config = None
-
     def __init__(
         self,
         deployment: Deployment = Deployment.stg,
@@ -81,7 +79,8 @@ class ServiceConfig(Config):
         fas_password: Optional[str] = "",
         bugzilla_url: str = "",
         bugzilla_api_key: str = "",
-        pr_accepted_labels: List[str] = None,
+        bugz_namespaces: List[str] = None,
+        bugz_branches: List[str] = None,
         gitlab_webhook_tokens: List[str] = None,
         enabled_private_namespaces: Union[Set[str], List[str]] = None,
         gitlab_token_secret: str = "",
@@ -108,8 +107,12 @@ class ServiceConfig(Config):
 
         self.bugzilla_url = bugzilla_url
         self.bugzilla_api_key = bugzilla_api_key
-        # Labels/Tags to mark a PR as accepted - handler will create a bug & attach patch from PR
-        self.pr_accepted_labels: Set[str] = set(pr_accepted_labels or ["accepted"])
+        # Create bugs only for MRs against these namespaces
+        self.bugz_namespaces: Set[str] = set(
+            bugz_namespaces or ["redhat/centos-stream/src"]
+        )
+        # Create bugs only for MRs against one of these branches (regex set)
+        self.bugz_branches: Set[str] = set(bugz_branches or [r"^c8s"])
 
         # List of github users who are allowed to trigger p-s on any repository
         self.admins: Set[str] = set(admins or [])
@@ -138,6 +141,8 @@ class ServiceConfig(Config):
         self.dashboard_url = dashboard_url
         self.koji_logs_url = koji_logs_url
         self.koji_web_url = koji_web_url
+
+    service_config = None
 
     def __repr__(self):
         def hide(token: str) -> str:

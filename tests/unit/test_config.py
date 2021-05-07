@@ -43,7 +43,8 @@ def service_config_valid():
         "testing_farm_secret": "granko",
         "bugzilla_url": "https://ladybug-zilla",
         "bugzilla_api_key": "ratamahatta",
-        "pr_accepted_labels": ["good-enough", "will-maintain-this"],
+        "bugz_namespaces": ["^magic/namespace"],
+        "bugz_branches": ["^onlythis$"],
         "command_handler": "sandcastle",
         "command_handler_work_dir": "/sandcastle",
         "command_handler_image_reference": "quay.io/packit/sandcastle",
@@ -72,7 +73,8 @@ def test_parse_valid(service_config_valid):
     assert config.testing_farm_api_url == TESTING_FARM_API_URL
     assert config.bugzilla_url == "https://ladybug-zilla"
     assert config.bugzilla_api_key == "ratamahatta"
-    assert config.pr_accepted_labels == {"good-enough", "will-maintain-this"}
+    assert config.bugz_namespaces == {"^magic/namespace"}
+    assert config.bugz_branches == {"^onlythis$"}
     assert config.command_handler_work_dir == "/sandcastle"
     assert config.admins == {"Dasher", "Dancer", "Vixen", "Comet", "Blitzen"}
     assert config.server_name == "hub.packit.org"

@@ -2,14 +2,21 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import re
 from typing import Optional
 
 from ogr.abstract import CommitStatus, PullRequest
-from packit.config import JobConfig, PackageConfig
-from packit_service.models import BugzillaModel
+from packit.config import (
+    JobConfig,
+)
+from packit.config.package_config import PackageConfig
+
+from packit_service.models import (
+    BugzillaModel,
+)
 from packit_service.service.events import (
-    PullRequestLabelAction,
-    PullRequestLabelPagureEvent,
+    MergeRequestGitlabEvent,
+    GitlabEventAction,
 )
 from packit_service.worker.handlers.abstract import (
     JobHandler,
@@ -23,9 +30,9 @@ from packit_service.worker.result import TaskResults
 logger = logging.getLogger(__name__)
 
 
-@reacts_to(event=PullRequestLabelPagureEvent)
-class PagurePullRequestLabelHandler(JobHandler):
-    task_name = TaskName.pagure_pr_label
+@reacts_to(MergeRequestGitlabEvent)
+class BugzillaHandler(JobHandler):
+    task_name = TaskName.bugzilla
 
     def __init__(
         self, package_config: PackageConfig, job_config: JobConfig, event: dict
@@ -35,11 +42,10 @@ class PagurePullRequestLabelHandler(JobHandler):
             job_config=job_config,
             event=event,
         )
-        self.labels = set(event.get("labels"))
-        self.action = PullRequestLabelAction(event.get("action"))
-        self.base_repo_owner = event.get("base_repo_owner")
-        self.base_repo_name = event.get("base_repo_name")
-        self.base_repo_namespace = event.get("base_repo_namespace")
+        self.action: GitlabEventAction = GitlabEventAction(event["action"])
+        self.target_repo_name = event.get("target_repo_name")
+        self.target_repo_namespace = event.get("target_repo_namespace")
+        self.target_repo_branch = event.get("target_repo_branch")
 
         self.pr: PullRequest = self.project.get_pr(self.data.pr_id)
         # lazy properties
@@ -52,8 +58,8 @@ class PagurePullRequestLabelHandler(JobHandler):
         if self._bz_model is None:
             self._bz_model = BugzillaModel.get_by_pr(
                 pr_id=self.data.pr_id,
-                namespace=self.base_repo_namespace,
-                repo_name=self.base_repo_name,
+                namespace=self.target_repo_namespace,
+                repo_name=self.target_repo_name,
                 project_url=self.data.project_url,
             )
         return self._bz_model
@@ -77,33 +83,30 @@ class PagurePullRequestLabelHandler(JobHandler):
 
     def _create_bug(self):
         """Fill a Bugzilla bug and store in db."""
+        description = f"""This bug has been opened as a response to a Merge Request (MR)
+{self.pr.url}
+in the source-git repository.
+
+For more info
+https://wiki.centos.org/Contribute/CentOSStream
+https://docs.centos.org/en-US/stream-contrib
+
+How to get a patch from the MR:
+curl {self.pr.url}.patch"""
         bug_id, bug_url = self.bugzilla.create_bug(
             product="Red Hat Enterprise Linux 8",
             version="CentOS Stream",
-            component=self.base_repo_name,
+            component=self.target_repo_name,
             summary=self.pr.title,
-            description=f"Based on approved CentOS Stream pull-request: {self.pr.url}",
+            description=description,
         )
         self._bz_model = BugzillaModel.get_or_create(
             pr_id=self.data.pr_id,
-            namespace=self.base_repo_namespace,
-            repo_name=self.base_repo_name,
+            namespace=self.target_repo_namespace,
+            repo_name=self.target_repo_name,
             project_url=self.data.project_url,
             bug_id=bug_id,
             bug_url=bug_url,
-        )
-
-    def _attach_patch(self):
-        """Attach a patch from the pull request to the bug."""
-        if not (self.bz_model and self.bz_model.bug_id):
-            raise RuntimeError(
-                "PagurePullRequestLabelHandler._attach_patch(): bug_id not set"
-            )
-
-        self.bugzilla.add_patch(
-            bzid=self.bz_model.bug_id,
-            content=self.pr.patch,
-            file_name=f"pr-{self.data.pr_id}.patch",
         )
 
     def _set_status(self):
@@ -112,7 +115,7 @@ class PagurePullRequestLabelHandler(JobHandler):
         """
         if not (self.bz_model and self.bz_model.bug_id and self.bz_model.bug_url):
             raise RuntimeError(
-                "PagurePullRequestLabelHandler._set_status(): bug_id or bug_url not set"
+                "MergeRequestLabelHandler._set_status(): bug_id or bug_url not set"
             )
 
         self.status_reporter.set_status(
@@ -123,18 +126,30 @@ class PagurePullRequestLabelHandler(JobHandler):
         )
 
     def run(self) -> TaskResults:
+        if self.action != GitlabEventAction.opened:
+            logger.debug("Won't run BugzillaHandler for already opened MR.")
+            return TaskResults(success=True)
         logger.debug(
-            f"Handling labels/tags {self.labels} {self.action.value} to Pagure PR "
-            f"{self.base_repo_owner}/{self.base_repo_namespace}/"
-            f"{self.base_repo_name}/{self.data.identifier}"
+            f"About to create a bugzilla based on MR "
+            f"{self.target_repo_namespace}/{self.target_repo_name}/{self.data.identifier} "
+            f"branch {self.target_repo_branch}"
         )
-        if self.labels.intersection(self.service_config.pr_accepted_labels):
-            if not self.bz_model:
-                self._create_bug()
-            self._attach_patch()
-            self._set_status()
-        else:
+        if not any(
+            re.match(n, self.target_repo_namespace)
+            for n in self.service_config.bugz_namespaces
+        ):
             logger.debug(
-                f"We accept only {self.service_config.pr_accepted_labels} labels/tags"
+                f"We accept only {self.service_config.bugz_namespaces} namespaces"
             )
+            return TaskResults(success=True)
+        if not any(
+            re.match(b, self.target_repo_branch)
+            for b in self.service_config.bugz_branches
+        ):
+            logger.debug(f"We accept only {self.service_config.bugz_branches} branches")
+            return TaskResults(success=True)
+
+        if not self.bz_model:
+            self._create_bug()
+        self._set_status()
         return TaskResults(success=True)
